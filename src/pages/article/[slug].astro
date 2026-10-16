@@ -1,0 +1,39 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+const { slug } = Astro.params;
+---
+<BaseLayout title="مطلب" active="تحریریه">
+  <article class="page-width article-body" id="article-root" data-slug={slug}>
+    <p class="loading">در حال بارگذاری...</p>
+  </article>
+</BaseLayout>
+
+<script>
+  import { micromark } from "micromark";
+
+  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>\"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;",
+  })[char]!);
+  const root = document.getElementById("article-root");
+  const slug = root?.dataset.slug;
+  (async () => {
+    if (!root || !slug) return;
+    try {
+      const res = await fetch(`/api/articles/${encodeURIComponent(slug)}`);
+      if (!res.ok) throw new Error("مطلب پیدا نشد");
+      const a = await res.json();
+      document.title = `${a.title} · گیم‌کلاب`;
+      const body = micromark(a.body || a.excerpt || "", { allowDangerousHtml: false });
+      root.innerHTML = `
+        ${a.image ? `<img src="${escapeHtml(a.image)}" alt="" />` : ""}
+        <span class="chip" style="color:var(--accent);border-color:var(--accent)">${escapeHtml(a.category)}</span>
+        <h1 style="font-size:clamp(28px,4vw,40px);font-weight:900;margin:12px 0">${escapeHtml(a.title)}</h1>
+        <p style="color:var(--muted)">${escapeHtml(a.author)} · ${escapeHtml(a.time)} · ${Number(a.views) || 0} بازدید</p>
+        <div class="markdown-content">${body}</div>
+        <p style="margin-top:32px"><a class="btn-ghost" href="/editorial">← بازگشت به تحریریه</a></p>
+      `;
+    } catch (e) {
+      root.innerHTML = `<p class="error">${e instanceof Error ? e.message : "خطا"}</p>`;
+    }
+  })();
+</script>

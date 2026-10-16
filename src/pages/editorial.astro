@@ -1,0 +1,42 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { getArticles, type Article } from "../lib/api";
+
+let articles: Article[] = [];
+let error = "";
+try {
+  articles = (await getArticles()).items ?? [];
+} catch (e) {
+  error = e instanceof Error ? e.message : "خطا";
+}
+---
+<BaseLayout title="تحریریه" active="تحریریه">
+  <section class="editorial" style="min-height:60vh">
+    <div class="page-width">
+      <div class="section-heading">
+        <div style="display:flex;align-items:center">
+          <span class="section-index">ED</span>
+          <div>
+            <div class="section-kicker">EDITORIAL_ARCHIVE</div>
+            <h2>آرشیو تحریریه</h2>
+          </div>
+        </div>
+      </div>
+      {error && <p class="empty" style="color:var(--accent)">{error}</p>}
+      {articles.length === 0 && !error && <p class="empty" style="color:var(--accent)">مطلبی نیست.</p>}
+      <div style="display:grid;gap:14px;max-width:800px">
+        {articles.map((a) => (
+          <a class="compact-article" href={`/article/${a.slug}`} style="grid-template-columns:160px 1fr;min-height:140px">
+            {a.image ? <img src={a.image} alt="" /> : <div style="background:var(--glass)" />}
+            <div class="copy">
+              <span class="chip">{a.category || "مطلب"}</span>
+              <strong style="display:block;margin:8px 0;font-size:17px">{a.title}</strong>
+              <p style="margin:0;opacity:.8;font-size:14px">{a.excerpt}</p>
+              <small style="opacity:.65">{a.author} · {a.time} · {a.views} بازدید</small>
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
+  </section>
+</BaseLayout>

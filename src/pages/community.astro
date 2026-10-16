@@ -1,0 +1,50 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="حساب و ارتباطات" active="">
+  <section class="page-width community-page account-page" id="community-root"><p class="loading">در حال بارگذاری حساب...</p></section>
+</BaseLayout>
+<script>
+const root = document.getElementById('community-root')!;
+const esc = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+async function api(path: string, method = 'GET', body?: unknown) {
+  const token = localStorage.getItem('gc_token');
+  const res = await fetch(path, { method, headers: { ...(token ? {Authorization:`Bearer ${token}`} : {}), ...(body ? {'Content-Type':'application/json'} : {}) }, ...(body ? {body:JSON.stringify(body)} : {}) });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { localStorage.removeItem('gc_token'); location.href = '/login?next=/community'; }
+  if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'درخواست انجام نشد. دوباره تلاش کنید.');
+  return data;
+}
+function notice(message: string) { const node = root.querySelector('#notice'); if (node) node.textContent = message; }
+async function action(button: HTMLButtonElement, task: () => Promise<void>) {
+  button.disabled = true;
+  try { await task(); } catch(error) { notice(error instanceof Error ? error.message : 'درخواست انجام نشد.'); }
+  finally { button.disabled = false; }
+}
+async function load() {
+ if (!localStorage.getItem('gc_token')) { root.innerHTML='<div class="glass-card"><h1>حساب و ارتباطات</h1><p>برای مدیریت پروفایل، دوستان و پیام‌ها وارد حساب شوید.</p><a class="btn btn-primary" href="/login?next=/community">ورود به حساب</a></div>'; return; }
+ try {
+  const [me,friends,users] = await Promise.all([api('/api/profile'),api('/api/friends'),api('/api/users')]);
+  const person = (u: any) => `<span class="avatar">${esc(u.avatar_initial || u.display_name?.slice(0,1))}</span><span class="member-copy"><strong>${esc(u.display_name)}</strong><small dir="ltr">@${esc(u.username)}</small></span>`;
+  root.innerHTML=`<div class="section-heading"><div><span class="section-kicker">حساب کاربری</span><h1>${esc(me.display_name)}</h1></div><button class="btn btn-ghost" type="button" data-sign-out>خروج از حساب</button></div><p id="notice" class="form-notice" role="status" aria-live="polite"></p>
+  <nav class="account-menu" aria-label="مدیریت حساب"><a class="btn btn-ghost" href="#profile">پروفایل</a><a class="btn btn-ghost" href="#friends">دوستان</a><a class="btn btn-ghost" href="#people-panel">درخواست‌های دوستی</a><a class="btn btn-ghost" href="#messages">پیام‌های خصوصی</a></nav>
+  <section class="glass-card account-panel" id="profile"><h2>ویرایش پروفایل</h2><form id="profile-form" class="account-form"><label for="display-name">نام نمایشی</label><input id="display-name" name="display_name" required maxlength="128" value="${esc(me.display_name)}"><label for="profile-bio">درباره من</label><textarea id="profile-bio" name="bio" rows="4" maxlength="1000">${esc(me.bio || '')}</textarea><button class="btn btn-primary" type="submit">ذخیره پروفایل</button></form></section>
+  <div class="community-grid"><section class="glass-card account-panel" id="friends"><h2>دوستان</h2>${friends.length ? friends.map((u:any)=>`<div class="member-row">${person(u)}<div class="account-row-actions"><button class="btn btn-ghost" type="button" data-chat="${u.id}">پیام</button><button class="btn btn-ghost text-danger" type="button" data-remove="${u.id}">حذف دوست</button></div></div>`).join('') : '<p class="muted">هنوز دوستی ندارید. از فهرست بازیکنان درخواست دوستی بفرستید.</p>'}</section>
+  <section class="glass-card account-panel" id="people-panel"><h2>بازیکنان و درخواست‌های دوستی</h2><label for="people-search">جستجوی بازیکن</label><input id="people-search" type="search" placeholder="نام یا شناسه"><div id="people">${users.map((u:any)=>`<div class="member-row" data-person="${esc((u.display_name+' '+u.username).toLowerCase())}">${person(u)}<div class="account-row-actions"><button class="btn btn-ghost" type="button" data-friend="${u.id}" ${['friend','outgoing'].includes(u.friendship)?'disabled':''}>${u.friendship==='friend'?'دوست شما':u.friendship==='incoming'?'پذیرفتن درخواست':u.friendship==='outgoing'?'درخواست ارسال شده':'افزودن دوست'}</button>${['incoming','outgoing'].includes(u.friendship) ? `<button class="btn btn-ghost" type="button" data-remove="${u.id}">${u.friendship==='incoming'?'رد درخواست':'لغو درخواست'}</button>` : ''}</div></div>`).join('')}</div><p id="people-empty" class="muted" hidden>بازیکنی با این نام پیدا نشد.</p></section></div>
+  <section class="glass-card account-panel" id="messages"><h2>پیام‌های خصوصی</h2><div id="chat"><p class="muted">برای شروع گفتگو، دکمه «پیام» کنار نام دوست خود را بزنید.</p></div></section>`;
+  root.querySelector('[data-sign-out]')?.addEventListener('click', () => { localStorage.removeItem('gc_token'); location.href = '/login'; });
+  root.querySelector('#profile-form')!.addEventListener('submit', e => { e.preventDefault(); const form=e.currentTarget as HTMLFormElement; const values=new FormData(form); void action(form.querySelector<HTMLButtonElement>('[type="submit"]')!, async()=>{ const updated=await api('/api/profile','PUT',{display_name:String(values.get('display_name')).trim(),bio:values.get('bio')}); root.querySelector('h1')!.textContent=updated.display_name; notice('پروفایل ذخیره شد.'); }); });
+  root.querySelectorAll<HTMLButtonElement>('[data-friend]').forEach(b=>b.onclick=()=>void action(b,async()=>{await api(`/api/friends/${b.dataset.friend}`,'POST',{});await load();notice('درخواست دوستی ثبت شد.');}));
+  root.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach(b=>b.onclick=()=>void action(b,async()=>{await api(`/api/friends/${b.dataset.remove}`,'DELETE');await load();notice('فهرست دوستان و درخواست‌ها به‌روز شد.');}));
+  root.querySelector('#people-search')!.addEventListener('input',e=>{const q=(e.target as HTMLInputElement).value.trim().toLowerCase();let count=0;root.querySelectorAll<HTMLElement>('[data-person]').forEach(x=>{x.hidden=!x.dataset.person!.includes(q);if(!x.hidden)count++});root.querySelector<HTMLElement>('#people-empty')!.hidden=count>0;});
+  async function openChat(peer: string) {
+    const friend=friends.find((u:any)=>String(u.id)===peer);
+    const rows=await api(`/api/messages/${peer}`);
+    root.querySelector('#chat')!.innerHTML=`<h3>گفتگو با ${esc(friend?.display_name || 'دوست')}</h3><div class="message-list">${rows.length ? rows.map((m:any)=>`<div class="message-bubble ${m.sender_id===me.id?'message-own':''}"><strong>${m.sender_id===me.id?'شما':esc(friend?.display_name || 'دوست')}</strong><p dir="auto">${esc(m.body)}</p></div>`).join('') : '<p class="muted">هنوز پیامی رد و بدل نشده است.</p>'}</div><form id="message-form" class="account-form"><label for="message-body">متن پیام</label><textarea id="message-body" name="body" rows="3" dir="auto" required maxlength="5000"></textarea><button class="btn btn-primary" type="submit">ارسال پیام</button></form>`;
+    root.querySelector('#message-form')!.addEventListener('submit',e=>{e.preventDefault();const form=e.currentTarget as HTMLFormElement;void action(form.querySelector<HTMLButtonElement>('[type="submit"]')!,async()=>{const body=String(new FormData(form).get('body')).trim();if(!body){notice('متن پیام را بنویسید.');return;}await api(`/api/messages/${peer}`,'POST',{body});await openChat(peer);notice('پیام ارسال شد.');});});
+  }
+  root.querySelectorAll<HTMLButtonElement>('[data-chat]').forEach(b=>b.onclick=()=>void action(b,async()=>{await openChat(b.dataset.chat!);root.querySelector('#messages')?.scrollIntoView({block:'start'});}));
+ } catch(error) { root.innerHTML=`<div class="glass-card"><h1>دریافت حساب انجام نشد</h1><p>${esc(error instanceof Error ? error.message : 'دوباره تلاش کنید.')}</p><button class="btn btn-primary" type="button" data-retry>تلاش دوباره</button></div>`;root.querySelector('[data-retry]')?.addEventListener('click',()=>void load()); }
+}
+void load();
+</script>

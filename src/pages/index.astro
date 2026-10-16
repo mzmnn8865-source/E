@@ -1,0 +1,216 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { getArticles, getDiscussions, getGroups, type Article, type Discussion, type Group } from "../lib/api";
+
+let articles: Article[] = [];
+let groups: Group[] = [];
+let posts: Discussion[] = [];
+let error = "";
+
+try {
+  const a = await getArticles();
+  articles = a.items ?? [];
+  groups = await getGroups();
+} catch (e) {
+  error = e instanceof Error ? e.message : "خطا در دریافت داده";
+}
+
+try {
+  posts = (await getDiscussions()).slice(0, 6);
+} catch (e) {
+  if (!error) error = e instanceof Error ? e.message : "خطا در دریافت پست‌ها";
+}
+
+const feature = articles[0];
+const side = articles.slice(1, 4);
+const groupById = new Map(groups.map((group) => [group.id, group]));
+---
+<BaseLayout title="خانه" active="خانه">
+  <section class="club-hero page-width">
+    <div class="club-intro">
+      <div class="club-eyebrow"><span></span> باشگاه بازیکن‌ها، نویسنده‌ها و رفیق‌ها</div>
+      <h1>بازی ادامه دارد.<br /><em>با هم، بهتر.</em></h1>
+      <p>یک دنیا بازی، هزار راه برای رفاقت. گروهت را پیدا کن، تجربه‌ات را بنویس و به گفتگوی بعدی بپیوند.</p>
+      <div class="hero-actions"><a class="btn btn-primary" href="/groups">گروهت رو پیدا کن <span aria-hidden="true">↖</span></a><a class="btn btn-ghost" href="/editorial">کشف تحریریه ←</a></div>
+      <div class="club-caption"><span dir="ltr">01 / YOUR NEXT SAVE POINT</span><span>اینجا جای شماست.</span></div>
+    </div>
+    <div class="orbital-window" aria-hidden="true">
+      <div class="window-bar"><span dir="ltr">GAMECLUB / EXPLORER</span><span>− &nbsp; ◇ &nbsp; ×</span></div>
+      <div class="orbital-scene"><div class="orbit orbit-a"></div><div class="orbit orbit-b"></div><div class="chrome-globe"><span>gc<span class="globe-star">✳</span></span></div><span class="scene-spark">✦</span><span class="scene-coordinate" dir="ltr">PLAY. CONNECT. REPEAT.</span><div class="scene-label"><span>✳</span><div>رفاقت، بدون مرز<small dir="ltr">MULTIPLAYER BY NATURE</small></div></div></div>
+      <div class="window-bottom"><span dir="ltr">INSERT YOURSELF HERE</span><span>↗</span></div>
+    </div>
+  </section>
+  <div class="club-directory page-width"><a href="/groups"><span class="directory-symbol">◎</span><span><strong>هم‌بازی پیدا کن</strong><small>گروه‌ها و گفتگوها</small></span><span>↖</span></a><a href="/editorial"><span class="directory-symbol">▤</span><span><strong>یک نگاه تازه</strong><small>داستان‌ها و نقد بازی</small></span><span>↖</span></a><a href="/community"><span class="directory-symbol">✳</span><span><strong>بخشی از باشگاه باش</strong><small>حساب کاربری و دوستان</small></span><span>↖</span></a></div>
+  {error && <div class="error page-width" role="status">دریافت بعضی مطالب ممکن نشد. <a href="/">تلاش دوباره ←</a></div>}
+
+  <section class="editorial latest-posts">
+    <div class="page-width">
+      <div class="section-heading">
+        <div style="display:flex;align-items:center">
+          <span class="section-index">01</span>
+          <div>
+            <div class="section-kicker">گفتگوهای جامعه</div>
+            <h2>تازه‌ترین پست‌ها</h2>
+          </div>
+        </div>
+        <a class="all-link" href="/groups">دیدن گروه‌ها ←</a>
+      </div>
+
+      {posts.length === 0 ? (
+        <p class="empty" style="color:var(--accent)">هنوز پستی منتشر نشده است.</p>
+      ) : (
+        <div class="latest-post-grid">
+          {posts.map((post) => {
+            const group = post.group_id === null ? undefined : groupById.get(post.group_id);
+            const href = group ? `/groups/${encodeURIComponent(group.slug)}#post-${post.id}` : undefined;
+            return href ? (
+              <a class="latest-post-card" href={href}>
+                <div class="latest-post-meta">
+                  <span class="post-avatar">{post.initial}</span>
+                  <span>{post.user}</span>
+                  <span>{post.age}</span>
+                </div>
+                <h2>{post.title}</h2>
+                <p>{post.body}</p>
+                <div class="latest-post-footer">
+                  <span>{post.group}</span>
+                  <span>{post.reply_count} دیدگاه</span>
+                </div>
+              </a>
+            ) : (
+              <article class="latest-post-card">
+                <div class="latest-post-meta">
+                  <span class="post-avatar">{post.initial}</span>
+                  <span>{post.user}</span>
+                  <span>{post.age}</span>
+                </div>
+                <h2>{post.title}</h2>
+                <p>{post.body}</p>
+                <div class="latest-post-footer">
+                  <span>{post.group || "گفتگوی عمومی"}</span>
+                  <span>{post.reply_count} دیدگاه</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  </section>
+
+  <section class="editorial">
+    <div class="page-width">
+      <div class="section-heading">
+        <div style="display:flex;align-items:center">
+          <span class="section-index">02</span>
+          <div>
+            <div class="section-kicker">جدیدترین‌ها</div>
+            <h2>از تحریریه</h2>
+          </div>
+        </div>
+        <a class="all-link" href="/editorial">همه مطالب ←</a>
+      </div>
+
+      {articles.length === 0 ? (
+        <p class="empty" style="color:var(--accent)">اولین داستان باشگاه به‌زودی اینجاست.</p>
+      ) : (
+        <div class="article-grid">
+          {feature && (
+            <a class="feature-article" href={`/article/${feature.slug}`}>
+              {feature.image ? <img src={feature.image} alt="" loading="lazy" /> : <div class="shade" />}
+              <div class="shade" />
+              <div class="copy">
+                <span class="chip">{feature.category || "مطلب"}</span>
+                <h3>{feature.title}</h3>
+                <p style="opacity:.85;margin:0">{feature.excerpt}</p>
+                <small style="opacity:.7">{feature.author} · {feature.time}</small>
+              </div>
+            </a>
+          )}
+          <div>
+            {side.map((a) => (
+              <a class="compact-article" href={`/article/${a.slug}`}>
+                {a.image ? <img src={a.image} alt="" loading="lazy" /> : <div style="background:var(--glass)" />}
+                <div class="copy">
+                  <span class="chip">{a.category || "مطلب"}</span>
+                  <strong style="display:block;margin-top:6px">{a.title}</strong>
+                  <small style="opacity:.7">{a.time}</small>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </section>
+
+  <section class="groups-section page-width">
+    <div class="section-heading">
+      <div style="display:flex;align-items:center">
+          <span class="section-index" style="color:var(--accent)">03</span>
+        <div>
+          <div class="section-kicker" style="color:var(--accent)">جامعه</div>
+          <h2 style="color:var(--ink)">گروه‌ها</h2>
+        </div>
+      </div>
+      <a class="all-link" style="color:var(--accent)" href="/groups">همه گروه‌ها ←</a>
+    </div>
+    {groups.length === 0 ? (
+      <p class="empty">هنوز گروهی نیست.</p>
+    ) : (
+      <div class="group-grid">
+        {groups.slice(0, 8).map((g) => (
+          <a class="glass-card" href={`/groups/${g.slug}`}>
+            <div class="group-icon" style={`background:${g.color}22;color:${g.color};border:1px solid ${g.color}55`}>
+              {g.icon || g.name.slice(0, 1)}
+            </div>
+            <strong>{g.name}</strong>
+            <p style="color:var(--muted);font-size:13px;margin:6px 0 0">
+              {g.description || `${g.member_count} عضو`}
+            </p>
+          </a>
+        ))}
+      </div>
+    )}
+  </section>
+
+  <section class="misc-section page-width">
+    <div class="newsletter" id="newsletter">
+      <span class="section-kicker" style="color:var(--accent)">خبرنامه هفتگی</span>
+      <h3>هیچ مرحله‌ای رو از دست نده!</h3>
+      <p style="color:var(--muted)">جمع‌بندی بهترین مطالب، هر پنج‌شنبه در ایمیل شما.</p>
+      <form id="news-form">
+        <input type="email" name="email" required placeholder="ایمیل شما" aria-label="ایمیل" />
+        <button type="submit">عضویت</button>
+      </form>
+      <p role="status" aria-live="polite" id="news-msg" style="margin-top:10px;font-weight:700"></p>
+    </div>
+  </section>
+</BaseLayout>
+
+<script>
+  const form = document.getElementById("news-form") as HTMLFormElement | null;
+  const msg = document.getElementById("news-msg");
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = new FormData(form).get("email") as string;
+    const button = form.querySelector('button')!;
+    button.disabled = true;
+    button.textContent = "در حال ثبت…";
+    try {
+      const res = await fetch("/api/newsletter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "خطا");
+      if (msg) msg.textContent = "ثبت شد! پنج‌شنبه می‌بینیمت.";
+      form.reset();
+    } catch (err) {
+      if (msg) msg.textContent = err instanceof Error ? err.message : "خطا";
+    } finally {
+      button.disabled = false;
+      button.textContent = "عضویت";
+    }
+  });
+</script>

@@ -1,0 +1,36 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getGroups, type Group } from "../../lib/api";
+
+let groups: Group[] = [];
+let error = "";
+try {
+  groups = await getGroups();
+} catch (e) {
+  error = e instanceof Error ? e.message : "خطا";
+}
+---
+<BaseLayout title="گروه‌ها" active="گروه‌ها">
+  <section class="page-width page-hero">
+    <h1>گروه‌ها</h1>
+    <p style="color:var(--muted)">انجمن‌های جامعه — موسس گروه نقش اعضا را مدیریت می‌کند.</p>
+    <a class="btn btn-ghost" href="/private-group">ورود به گروه خصوصی با کلید</a>
+  </section>
+  <section class="page-width" style="padding-bottom:48px">
+    {error && <p class="error">{error}</p>}
+    {groups.length === 0 && !error && <p class="empty">هنوز گروهی نیست.</p>}
+    <div class="group-grid">
+      {groups.map((g) => (
+        <a class="glass-card" href={`/groups/${g.slug}`}>
+          <div class="group-icon" style={`background:${g.color}22;color:${g.color}`}>
+            {g.icon || g.name.slice(0, 1)}
+          </div>
+          <strong>{g.name}</strong>
+          <p style="color:var(--muted);font-size:13px;margin:6px 0 0">
+            {g.description || `${g.member_count} عضو · ${g.topic_count} موضوع`}
+          </p>
+        </a>
+      ))}
+    </div>
+  </section>
+</BaseLayout>

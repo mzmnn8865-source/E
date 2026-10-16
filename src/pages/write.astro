@@ -1,0 +1,96 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+const articleId = Astro.url.searchParams.get('id') || '';
+---
+<BaseLayout title="نوشتن مقاله" active="تحریریه">
+  <section class="page-width article-studio" id="writer" data-article-id={articleId}>
+    <header class="studio-header">
+      <div><a href="/admin" class="studio-back">← بازگشت به مدیریت</a><span class="section-kicker">گیم‌کلاب · استودیوی تحریریه</span><h1 id="writer-heading">مقاله تازه</h1><p>ایده‌ات را بنویس، پیش‌نمایش را ببین و منتشر کن.</p></div>
+      <div class="studio-status"><span class="draft-dot"></span><span id="draft-state">پیش‌نویس روی این دستگاه ذخیره می‌شود</span></div>
+    </header>
+    <form id="article-form" class="studio-layout">
+      <div class="studio-main">
+        <section class="studio-card basics-card">
+          <label for="article-title">عنوان مقاله <span>ضروری</span></label>
+          <input id="article-title" name="title" maxlength="300" required placeholder="عنوانی که خواننده را کنجکاو می‌کند" />
+          <div class="studio-two-col"><div><label for="article-slug">نشانی مقاله <small>اختیاری؛ خالی بماند خودکار ساخته می‌شود</small></label><input id="article-slug" name="slug" dir="ltr" placeholder="my-game-story" /></div><div><label for="article-excerpt">خلاصه مقاله</label><textarea id="article-excerpt" name="excerpt" rows="3" maxlength="600" placeholder="در چند جمله بگو این مقاله درباره چیست."></textarea><small class="field-count" id="excerpt-count">۰ / ۶۰۰</small></div></div>
+        </section>
+        <section class="studio-card writing-card">
+          <div class="studio-section-title"><div><span class="section-kicker">داستان شما، با واژه‌های شما</span><h2>متن مقاله</h2></div><span id="word-count">۰ واژه</span></div>
+          <div class="writer-toolbar" role="toolbar" aria-label="ابزارهای قالب‌بندی Markdown">
+            <button type="button" data-line="# " title="عنوان اصلی">تیتر ۱</button><button type="button" data-line="## " title="عنوان بخش">تیتر ۲</button><button type="button" data-line="### " title="عنوان کوچک">تیتر ۳</button><button type="button" data-wrap="**" data-after="**" title="متن ضخیم"><strong>B</strong></button><button type="button" data-wrap="*" data-after="*" title="متن مورب"><em>I</em></button><button type="button" data-wrap="~~" data-after="~~" title="متن خط‌خورده">S</button><button type="button" data-line="> " title="نقل‌قول">❝</button><button type="button" data-line="- " title="فهرست نشانه‌دار">☷</button><button type="button" data-line="1. " title="فهرست شماره‌دار">۱.</button><button type="button" data-wrap="[" data-after="](https://)" title="افزودن پیوند">🔗</button><button type="button" data-wrap="&#96;" data-after="&#96;" title="کد درون‌خطی">&lt;/&gt;</button><button type="button" data-code title="بلوک کد">کد</button><button type="button" data-table title="افزودن جدول">▦</button><button type="button" data-image title="افزودن تصویر">▧</button><label class="tool-import">بازکردن فایل Markdown<input id="import-md" type="file" accept=".md,.markdown,text/markdown" /></label><button type="button" id="export-md" class="export-tool">دریافت فایل Markdown</button>
+          </div>
+          <div class="writer-columns"><div><div class="pane-heading">ویرایش متن</div><textarea id="article-body" name="body" dir="auto" required minlength="20" maxlength="50000" placeholder="# شروع مقاله\n\nاینجا بنویس..." spellcheck="true"></textarea></div><div><div class="pane-heading">پیش‌نمایش زنده</div><article id="article-preview" class="markdown-content live-preview" dir="auto"><p>پیش‌نمایش مقاله اینجا نمایش داده می‌شود.</p></article></div></div>
+        </section>
+      </div>
+      <aside class="studio-sidebar">
+        <section class="studio-card publish-card"><span class="section-kicker">انتشار مقاله</span><h2>آماده انتشار؟</h2><p>پس از انتشار، مقاله برای همه قابل مشاهده می‌شود.</p><p id="writer-message" role="status" aria-live="polite"></p><button id="publish-article" class="btn btn-primary" type="submit">انتشار مقاله</button><button id="save-draft" class="btn btn-ghost" type="button">ذخیره پیش‌نویس</button><a href="/admin" class="cancel-publish">بازگشت به مدیریت</a></section>
+        <section class="studio-card cover-card"><span class="section-kicker">تصویر جلد</span><h2>تصویر روی جلد</h2><div id="cover-preview" class="cover-preview"><span>پیش‌نمایش جلد</span></div><label for="article-image">نشانی تصویر</label><input id="article-image" name="image" dir="ltr" placeholder="https://… یا /media/…" /><label class="cover-upload" for="image-upload">بارگذاری تصویر<input id="image-upload" type="file" accept="image/jpeg,image/png,image/webp,image/gif" /></label><small>JPG، PNG، WebP یا GIF · حداکثر حجم طبق تنظیم سرور</small></section>
+      </aside>
+    </form>
+  </section>
+</BaseLayout>
+
+<script>
+  import { micromark } from 'micromark';
+  const root = document.getElementById('writer')!;
+  const form = document.getElementById('article-form') as HTMLFormElement;
+  const title = document.getElementById('article-title') as HTMLInputElement;
+  const slug = document.getElementById('article-slug') as HTMLInputElement;
+  const excerpt = document.getElementById('article-excerpt') as HTMLTextAreaElement;
+  const body = document.getElementById('article-body') as HTMLTextAreaElement;
+  const image = document.getElementById('article-image') as HTMLInputElement;
+  const preview = document.getElementById('article-preview')!;
+  const message = document.getElementById('writer-message')!;
+  const publish = document.getElementById('publish-article') as HTMLButtonElement;
+  const draftKey = `gc_article_draft_${root.dataset.articleId || 'new'}`;
+  let articleId = root.dataset.articleId ? Number(root.dataset.articleId) : null;
+  let slugEdited = false;
+  let saveTimer = 0;
+  const toSlug = (v: string) => v.trim().toLocaleLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}-]/gu, '').slice(0,120);
+  const data = () => ({title:title.value.trim(),slug:slug.value.trim() || undefined,excerpt:excerpt.value.trim(),body:body.value.trim(),image:image.value.trim()});
+  async function api(path: string, method = 'GET', payload?: unknown) {
+    const token = localStorage.getItem('gc_token');
+    const response = await fetch(path,{method,headers:{...(payload?{'Content-Type':'application/json'}:{}),...(token?{Authorization:`Bearer ${token}`}:{})},...(payload?{body:JSON.stringify(payload)}:{})});
+    const result = response.status === 204 ? null : await response.json().catch(()=>null);
+    if (!response.ok) throw new Error(result?.detail || 'درخواست انجام نشد.');
+    return result;
+  }
+  function updatePreview() {
+    preview.innerHTML = body.value.trim() ? micromark(body.value,{allowDangerousHtml:false}) : '<p>پیش‌نمایش مقاله اینجا نمایش داده می‌شود.</p>';
+    const words = body.value.trim().split(/\s+/u).filter(Boolean).length;
+    document.getElementById('word-count')!.textContent = `${words.toLocaleString('fa-IR')} واژه`;
+    document.getElementById('excerpt-count')!.textContent = `${excerpt.value.length.toLocaleString('fa-IR')} / ۶۰۰`;
+    const url = image.value.trim();
+    const cover = document.getElementById('cover-preview')!;
+    cover.style.backgroundImage = url ? `linear-gradient(0deg,#0c283b66,transparent),url("${url.replace(/["\\]/g,'')}")` : '';
+    cover.classList.toggle('has-image',Boolean(url));
+    scheduleDraft();
+  }
+  function saveLocalDraft() {
+    try { localStorage.setItem(draftKey,JSON.stringify({...data(),updatedAt:new Date().toISOString()})); document.getElementById('draft-state')!.textContent='پیش‌نویس ذخیره شد · همین دستگاه'; } catch { document.getElementById('draft-state')!.textContent='ذخیره محلی در دسترس نیست'; }
+  }
+  function scheduleDraft() { window.clearTimeout(saveTimer); saveTimer=window.setTimeout(saveLocalDraft,600); }
+  function insertAround(marker: string, after = marker) {
+    const start=body.selectionStart,end=body.selectionEnd,selection=body.value.slice(start,end)||'متن شما';
+    body.setRangeText(`${marker}${selection}${after}`,start,end,'select');body.focus();updatePreview();
+  }
+  document.querySelectorAll<HTMLButtonElement>('[data-wrap]').forEach(b=>b.addEventListener('click',()=>insertAround(b.dataset.wrap!,b.dataset.after||b.dataset.wrap!)));
+  document.querySelectorAll<HTMLButtonElement>('[data-line]').forEach(b=>b.addEventListener('click',()=>{const start=body.selectionStart,lineStart=body.value.lastIndexOf('\n',Math.max(0,start-1))+1;body.setRangeText(b.dataset.line!,lineStart,lineStart,'end');body.focus();updatePreview();}));
+  document.querySelector<HTMLButtonElement>('[data-code]')!.addEventListener('click',()=>{const start=body.selectionStart,end=body.selectionEnd,selected=body.value.slice(start,end)||'کد شما';body.setRangeText(`\n\`\`\`text\n${selected}\n\`\`\`\n`,start,end,'select');body.focus();updatePreview();});
+  document.querySelector<HTMLButtonElement>('[data-table]')!.addEventListener('click',()=>{const start=body.selectionStart;body.setRangeText('| ستون ۱ | ستون ۲ |\n| --- | --- |\n| مقدار | مقدار |',start,start,'end');body.focus();updatePreview();});
+  document.querySelector<HTMLButtonElement>('[data-image]')!.addEventListener('click',()=>{const start=body.selectionStart,end=body.selectionEnd,alt=body.value.slice(start,end)||'متن جایگزین';body.setRangeText(`![${alt}](https://)`,start,end,'select');body.focus();updatePreview();});
+  title.addEventListener('input',()=>{if(!slugEdited)slug.value=toSlug(title.value);updatePreview();});
+  slug.addEventListener('input',()=>{slugEdited=true;updatePreview();});
+  [body,excerpt,image].forEach(input=>input.addEventListener('input',updatePreview));
+  document.getElementById('save-draft')!.addEventListener('click',()=>{saveLocalDraft();message.textContent='پیش‌نویس روی همین دستگاه ذخیره شد.';});
+  document.getElementById('import-md')!.addEventListener('change',async event=>{const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];if(!file)return;const text=await file.text(),frontmatter=text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);let content=text;if(frontmatter){const get=(key:string)=>frontmatter[1].match(new RegExp(`^${key}:\\s*(.*)$`,'m'))?.[1]?.replace(/^['"]|['"]$/g,'')||'';if(get('title'))title.value=get('title');if(get('slug')){slug.value=get('slug');slugEdited=true;}content=text.slice(frontmatter[0].length);}body.value=content;updatePreview();input.value='';});
+  document.getElementById('export-md')!.addEventListener('click',()=>{const file=`---\ntitle: ${JSON.stringify(title.value)}\nslug: ${JSON.stringify(slug.value)}\n---\n\n${body.value}`,url=URL.createObjectURL(new Blob([file],{type:'text/markdown;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=`${slug.value||'gameclub-article'}.md`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+  document.getElementById('image-upload')!.addEventListener('change',async event=>{const input=event.currentTarget as HTMLInputElement,file=input.files?.[0];if(!file)return;const token=localStorage.getItem('gc_token');publish.disabled=true;message.textContent='تصویر در حال بارگذاری است…';try{const formData=new FormData();formData.append('file',file);const response=await fetch('/api/admin/media/upload',{method:'POST',headers:token?{Authorization:`Bearer ${token}`}:{},body:formData});const result=await response.json().catch(()=>null);if(!response.ok)throw new Error(result?.detail||'بارگذاری تصویر ناموفق بود.');image.value=result.url;updatePreview();message.textContent='تصویر بارگذاری شد.';}catch(error){message.textContent=error instanceof Error?error.message:'بارگذاری تصویر ناموفق بود.';}finally{publish.disabled=false;input.value='';}});
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;publish.disabled=true;message.textContent='در حال انتشار…';try{const saved=await api(articleId?`/api/admin/articles/${articleId}`:'/api/admin/articles',articleId?'PUT':'POST',data());articleId=saved.id;window.clearTimeout(saveTimer);localStorage.removeItem(draftKey);message.textContent='مقاله با موفقیت منتشر شد.';publish.textContent='ذخیره تغییرات';window.history.replaceState({},'',`/write?id=${articleId}`);setTimeout(()=>{window.location.href='/admin';},900);}catch(error){message.textContent=error instanceof Error?error.message:'انتشار انجام نشد.';}finally{publish.disabled=false;}});
+  (async()=>{try{const token=localStorage.getItem('gc_token');if(!token)throw new Error('برای نوشتن مقاله با حساب مدیر وارد شوید.');const user=await api('/api/auth/me');if(!user?.is_admin)throw new Error('دسترسی نوشتن مقاله فقط برای مدیران فعال است.');if(articleId){const first=await api('/api/articles?page=1&page_size=50');let found=first.items.find((a:any)=>a.id===articleId);for(let page=2;!found&&page<=Math.ceil(first.total/50);page++){const next=await api(`/api/articles?page=${page}&page_size=50`);found=next.items.find((a:any)=>a.id===articleId);}if(!found)throw new Error('مقاله پیدا نشد.');title.value=found.title;slug.value=found.slug;slugEdited=true;excerpt.value=found.excerpt||'';body.value=found.body||'';image.value=found.image||'';const saved=localStorage.getItem(draftKey);if(saved){const draft=JSON.parse(saved);if(draft.updatedAt&&Date.parse(draft.updatedAt)>Date.parse(found.published_at||'')){title.value=draft.title||title.value;slug.value=draft.slug||slug.value;excerpt.value=draft.excerpt||'';body.value=draft.body||'';image.value=draft.image||'';}}document.getElementById('writer-heading')!.textContent='ویرایش مقاله';publish.textContent='ذخیره تغییرات';}else{const raw=localStorage.getItem(draftKey);if(raw){const draft=JSON.parse(raw);title.value=draft.title||'';slug.value=draft.slug||'';slugEdited=Boolean(draft.slug);excerpt.value=draft.excerpt||'';body.value=draft.body||'';image.value=draft.image||'';}}updatePreview();}catch(error){form.innerHTML=`<section class="studio-card"><h1>استودیوی مقاله</h1><p>${error instanceof Error?error.message:'دسترسی ممکن نیست.'}</p><a class="btn btn-primary" href="/login?next=%2Fwrite">ورود به حساب مدیر</a></section>`;}})();
+</script>
+
+<style>
+@import "../styles/editor.css";
+</style>

@@ -1,0 +1,253 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+const { slug } = Astro.params;
+---
+<BaseLayout title="گروه" active="گروه‌ها">
+  <section class="page-width community-page" id="group-root" data-slug={slug}>
+    <p class="loading">در حال بارگذاری گروه...</p>
+  </section>
+</BaseLayout>
+
+<script>
+  import { micromark } from "micromark";
+  import { bindGroupEditor } from "../../lib/group-editor";
+
+  const root = document.getElementById("group-root") as HTMLElement | null;
+  const slug = root?.dataset.slug;
+  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]!);
+  const renderMarkdown = (source: string) => {
+    const template = document.createElement('template');
+    template.innerHTML = micromark(source || '', { allowDangerousHtml: false });
+    template.content.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(anchor => {
+      const url = anchor.href;
+      if (!url.startsWith('https://')) return;
+      if (/\.(mp4|webm|ogg)(\?.*)?$/i.test(url)) {
+        const video = document.createElement('video'); video.src = url; video.controls = true; video.preload = 'metadata'; video.style.maxWidth = '100%'; video.style.borderRadius = '12px'; anchor.replaceWith(video);
+      } else {
+        const youtube = url.match(/^https:\/\/(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+        if (youtube) { const frame = document.createElement('iframe'); frame.src = `https://www.youtube-nocookie.com/embed/${youtube[1]}`; frame.title = 'ویدیوی پست'; frame.loading = 'lazy'; frame.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'; frame.allowFullscreen = true; frame.style.width = '100%'; frame.style.aspectRatio = '16 / 9'; frame.style.border = '0'; frame.style.borderRadius = '12px'; anchor.replaceWith(frame); }
+      }
+    });
+    return template.innerHTML;
+  };
+  const api = async (path: string, method = "GET", data?: unknown) => {
+    const token = localStorage.getItem("gc_token");
+    const groupKey = slug ? localStorage.getItem(`gc_group_key_${slug}`) : null;
+    const response = await fetch(path, {
+      method,
+      headers: {
+        ...(data ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(groupKey ? { "X-Group-Key": groupKey } : {}),
+      },
+      ...(data ? { body: JSON.stringify(data) } : {}),
+    });
+    const result = response.status === 204 ? null : await response.json().catch(() => null);
+    if (!response.ok) throw new Error(result?.detail || "درخواست انجام نشد.");
+    return result;
+  };
+  const roleLabel = (role: string) => role === "owner" ? "بنیان‌گذار" : role === "admin" ? "مدیر" : "عضو";
+  let user: any = null;
+  let group: any;
+  let membership: any = { joined: false, role: null };
+  let moderator = false;
+
+  async function loadComments(details: HTMLDetailsElement, post: any) {
+    const list = details.querySelector<HTMLElement>("[data-comments]")!;
+    try {
+      const comments = await api(`/api/discussions/${post.id}/replies`);
+      list.innerHTML = comments.length ? comments.map((comment: any) => `
+        <div class="comment-row">
+          <span class="avatar">${escapeHtml(comment.initial)}</span>
+          <div class="comment-copy"><strong>${escapeHtml(comment.user)}</strong><small>${escapeHtml(comment.age)}</small><div class="markdown-content" dir="auto">${renderMarkdown(comment.body || "")}</div></div>
+          ${user && (moderator || comment.user_id === user.id) ? `<button class="text-danger" data-delete-comment="${comment.id}" type="button">حذف</button>` : ""}
+        </div>`).join("") : '<p class="muted">اولین دیدگاه را شما بنویسید.</p>';
+      list.querySelectorAll<HTMLButtonElement>("[data-delete-comment]").forEach((button) => button.addEventListener("click", async () => {
+        if (!confirm("این دیدگاه حذف شود؟")) return;
+        try {
+          await api(`/api/discussions/${post.id}/replies/${button.dataset.deleteComment}`, "DELETE");
+          await loadComments(details, post);
+          await load();
+        } catch (error) { notice(error instanceof Error ? error.message : "حذف انجام نشد."); }
+      }));
+    } catch (error) { list.textContent = error instanceof Error ? error.message : "دریافت دیدگاه‌ها ممکن نشد."; }
+  }
+
+  function notice(message: string) {
+    const target = root?.querySelector<HTMLElement>("[data-notice]");
+    if (target) target.textContent = message;
+  }
+
+  async function load() {
+    if (!root || !slug) return;
+    try {
+      group = await api(`/api/groups/${encodeURIComponent(slug)}`);
+    } catch (error) {
+      const key = prompt("این گروه خصوصی است. کلید دسترسی را وارد کنید:");
+      if (!key) throw error;
+      localStorage.setItem(`gc_group_key_${slug}`, key.trim());
+      group = await api(`/api/groups/${encodeURIComponent(slug)}`);
+    }
+    const [members, posts] = await Promise.all([
+      api(`/api/groups/${group.id}/members`),
+      api(`/api/groups/${group.id}/posts`),
+    ]);
+    membership = user ? await api(`/api/groups/${group.id}/membership`) : { joined: false, role: null };
+    moderator = Boolean(user?.is_admin || ["owner", "admin"].includes(membership.role));
+    const canWrite = Boolean(user && (membership.joined || user.is_admin));
+    document.title = `${group.name} · گیم‌کلاب`;
+    root.innerHTML = `
+      <p class="form-notice" data-notice role="status" aria-live="polite"></p>
+      <section class="glass-card group-banner">
+        <div class="group-heading">
+          <div class="group-icon" style="background:${escapeHtml(group.color)}22;color:${escapeHtml(group.color)}">${escapeHtml(group.icon || group.name.slice(0, 1))}</div>
+          <div><span class="section-kicker">جامعه گیم‌کلاب</span><h1>${escapeHtml(group.name)}</h1><p>${members.length} عضو · ${posts.length} پست</p></div>
+        </div>
+        ${group.description ? `<p class="group-description">${escapeHtml(group.description)}</p>` : ""}
+        <div class="group-actions">
+          ${membership.role ? `<span class="role-chip">${roleLabel(membership.role)}</span>` : ""}
+          ${moderator && group.is_private ? '<button class="btn btn-ghost" data-rotate-key type="button">ساخت کلید دسترسی</button>' : ''}
+          ${membership.role !== "owner" ? `<button class="btn ${membership.joined ? "btn-ghost" : "btn-primary"}" data-membership type="button">${membership.joined ? "ترک گروه" : "عضویت در گروه"}</button>` : ""}
+        </div>
+      </section>
+      <div class="community-grid">
+        <section>
+          <div class="section-heading"><div><span class="section-kicker">گفتگو</span><h2>پست‌های گروه</h2></div><span class="muted">${posts.length} پست</span></div>
+          ${canWrite ? `<form class="glass-card post-composer" id="post-form"><h3>نوشتن پست تازه</h3><label for="post-title">عنوان پست</label><input id="post-title" name="title" maxlength="300" required placeholder="موضوع گفتگوی شما" /><div class="composer-label"><label for="post-body">متن پست</label><span class="muted">قالب‌بندی متن · پیش‌نمایش زنده</span></div><div class="md-toolbar post-md-toolbar" role="toolbar" aria-label="ابزارهای قالب‌بندی متن"><button type="button" data-line="# " title="عنوان بزرگ" aria-label="افزودن عنوان بزرگ">تیتر ۱</button><button type="button" data-line="## " title="عنوان بخش" aria-label="افزودن عنوان بخش">تیتر ۲</button><button type="button" data-wrap="**" data-after="**" title="متن ضخیم" aria-label="ضخیم کردن متن"><strong>ضخیم</strong></button><button type="button" data-wrap="*" data-after="*" title="متن مورب" aria-label="مورب کردن متن"><em>مورب</em></button><button type="button" data-wrap="~~" data-after="~~" title="متن خط‌خورده" aria-label="خط زدن متن">خط‌خورده</button><button type="button" data-line="> " title="نقل‌قول">❝</button><button type="button" data-line="- " title="فهرست نشانه‌دار">☷</button><button type="button" data-line="1. " title="فهرست شماره‌دار">۱.</button><button type="button" data-wrap="[" data-after="](https://)" title="افزودن پیوند">🔗</button><button type="button" data-wrap="&#96;" data-after="&#96;" title="کد درون‌خطی">&lt;/&gt;</button><button type="button" data-code title="بلوک کد">کد</button><button type="button" data-line="---\n" title="خط جداکننده">—</button><button type="button" data-video title="افزودن ویدیو با پیوند">ویدیو</button><button type="button" data-image title="افزودن تصویر با پیوند">▧</button></div><textarea id="post-body" name="body" maxlength="10000" rows="6" dir="auto" required placeholder="# موضوع گفتگو\n\nتجربه یا پرسش خود را بنویسید..."></textarea><div class="post-live-preview"><span class="pane-title">پیش‌نمایش</span><div class="markdown-content" id="post-preview" dir="auto"><p class="muted">پیش‌نمایش پست اینجا نمایش داده می‌شود.</p></div></div><button class="btn btn-primary" type="submit">انتشار پست</button></form>` : `<div class="glass-card join-prompt"><p>${user ? "برای نوشتن پست و دیدگاه، ابتدا عضو گروه شوید." : "برای شرکت در گفتگو وارد حساب کاربری شوید."}</p>${user ? '<button class="btn btn-primary" data-join-to-write type="button">عضویت در گروه و نوشتن پست</button>' : '<a class="btn btn-primary" href="/login">ورود به حساب</a>'}</div>`}
+          <div id="posts-list">${posts.length ? posts.map((post: any) => `
+            <article class="glass-card community-post" id="post-${post.id}" data-post-id="${post.id}">
+              <div class="post-meta"><span class="avatar">${escapeHtml(post.initial)}</span><span><strong>${escapeHtml(post.user)}</strong><small>${escapeHtml(post.age)}</small></span>${user && (moderator || post.user_id === user.id) ? `<button data-edit-post type="button">ویرایش پست</button><button class="text-danger" data-delete-post type="button">حذف پست</button>` : ""}</div>
+              <h3>${escapeHtml(post.title)}</h3><div class="post-body markdown-content" dir="auto">${renderMarkdown(post.body || "")}</div>
+              <details class="post-comments"><summary>${post.reply_count} دیدگاه · مشاهده و گفتگو</summary><div data-comments><p class="muted">دیدگاه‌ها با باز کردن این بخش بارگذاری می‌شوند.</p></div>
+                ${canWrite ? `<form data-comment-form><label for="comment-${post.id}">دیدگاه شما</label><textarea id="comment-${post.id}" name="body" rows="3" maxlength="10000" required></textarea><button class="btn btn-primary" type="submit">ارسال دیدگاه</button></form>` : ""}
+              </details>
+            </article>`).join("") : '<p class="empty">هنوز پستی در این گروه نیست. اولین نفر باشید!</p>'}</div>
+        </section>
+        <aside class="glass-card members-panel"><h2>اعضای گروه</h2>${members.length ? members.map((member: any) => `<div class="member-row"><span class="avatar">${escapeHtml(member.avatar_initial)}</span><div class="member-copy"><strong>${escapeHtml(member.display_name || member.username)}</strong><small>@${escapeHtml(member.username)}</small></div><span class="role-chip">${roleLabel(member.role)}</span>${user && (user.is_admin || membership.role === "owner") && member.role !== "owner" ? `<button type="button" class="member-role-button" data-member="${member.user_id}" data-next-role="${member.role === "admin" ? "member" : "admin"}">${member.role === "admin" ? "تبدیل به عضو" : "ارتقا به مدیر"}</button>` : ""}</div>`).join("") : '<p class="muted">هنوز عضوی نیست.</p>'}</aside>
+      </div>`;
+
+    root.querySelector<HTMLButtonElement>("[data-membership]")?.addEventListener("click", async (event) => {
+      if (!user) { location.href = "/login"; return; }
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      try { await api(`/api/groups/${group.id}/${membership.joined ? "leave" : "join"}`, "POST", {}); await load(); }
+      catch (error) { notice(error instanceof Error ? error.message : "درخواست انجام نشد."); }
+      finally { button.disabled = false; }
+    });
+    root.querySelector<HTMLButtonElement>("[data-join-to-write]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      try {
+        await api(`/api/groups/${group.id}/join`, "POST", {});
+        await load();
+        notice("عضویت شما انجام شد؛ حالا می‌توانید پست بنویسید.");
+        root.querySelector<HTMLTextAreaElement>("#post-body")?.focus();
+      } catch (error) {
+        notice(error instanceof Error ? error.message : "عضویت در گروه انجام نشد.");
+        button.disabled = false;
+      }
+    });
+    root.querySelector<HTMLButtonElement>("[data-rotate-key]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget as HTMLButtonElement;
+      button.disabled = true;
+      try {
+        const result = await api(`/api/groups/${group.id}/access-key`, "POST", {});
+        prompt("این کلید نمایش داده نمی‌شود و فقط برای این گروه معتبر است. اکنون آن را کپی کنید:", result.access_key);
+      } catch (error) { notice(error instanceof Error ? error.message : "ساخت کلید انجام نشد."); }
+      finally { button.disabled = false; }
+    });
+    root.querySelector<HTMLFormElement>("#post-form")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget as HTMLFormElement;
+      const button = form.querySelector<HTMLButtonElement>('[type="submit"]')!;
+      const values = new FormData(form);
+      button.disabled = true;
+      try { await api(`/api/groups/${group.id}/posts`, "POST", { title: String(values.get("title")).trim(), body: String(values.get("body")).trim() }); await load(); notice("پست شما منتشر شد."); }
+      catch (error) { notice(error instanceof Error ? error.message : "انتشار پست انجام نشد."); }
+      finally { button.disabled = false; }
+    });
+    const composer = root.querySelector<HTMLElement>("#post-form");
+    if (composer) bindGroupEditor(composer, renderMarkdown);
+    posts.forEach((post: any) => {
+      const article = root.querySelector<HTMLElement>(`[data-post-id="${post.id}"]`)!;
+      const details = article.querySelector<HTMLDetailsElement>("details")!;
+      details.addEventListener("toggle", () => { if (details.open) loadComments(details, post); });
+      article.querySelector<HTMLButtonElement>("[data-edit-post]")?.addEventListener("click", (event) => {
+        if (article.querySelector("[data-post-editor]")) return;
+        const editor = document.createElement("form");
+        editor.className = "post-edit-form";
+        editor.dataset.postEditor = "";
+        editor.innerHTML = `<label>ویرایش عنوان پست<input name="title" maxlength="300" required value="${escapeHtml(post.title)}"></label><label>ویرایش متن پست <span class="muted">قالب‌بندی متن و پیش‌نمایش زنده</span><textarea name="body" rows="7" maxlength="10000" required dir="auto">${escapeHtml(post.body)}</textarea></label><div class="post-edit-actions"><button class="btn btn-primary" type="submit">ذخیره تغییرات</button><button class="btn btn-ghost" data-cancel-edit type="button">لغو</button></div><p data-edit-notice role="status" aria-live="polite"></p>`;
+        article.querySelector(".post-meta")?.after(editor);
+        const editBody = editor.querySelector<HTMLTextAreaElement>('textarea[name="body"]')!;
+        const toolbar = document.createElement("div");
+        toolbar.innerHTML = `<div class="md-toolbar post-md-toolbar" role="toolbar" aria-label="ابزارهای قالب‌بندی متن"><button type="button" data-line="# " title="عنوان بزرگ" aria-label="افزودن عنوان بزرگ">تیتر ۱</button><button type="button" data-line="## " title="عنوان بخش" aria-label="افزودن عنوان بخش">تیتر ۲</button><button type="button" data-wrap="**" data-after="**" title="متن ضخیم" aria-label="ضخیم کردن متن"><strong>ضخیم</strong></button><button type="button" data-wrap="*" data-after="*" title="متن مورب" aria-label="مورب کردن متن"><em>مورب</em></button><button type="button" data-wrap="~~" data-after="~~" title="متن خط‌خورده" aria-label="خط زدن متن">خط‌خورده</button><button type="button" data-line="> " title="نقل‌قول">❝</button><button type="button" data-line="- " title="فهرست نشانه‌دار">☷</button><button type="button" data-line="1. " title="فهرست شماره‌دار">۱.</button><button type="button" data-wrap="[" data-after="](https://)" title="افزودن پیوند">🔗</button><button type="button" data-wrap="&#96;" data-after="&#96;" title="کد درون‌خطی">&lt;/&gt;</button><button type="button" data-code title="بلوک کد">کد</button><button type="button" data-line="---\n" title="خط جداکننده">—</button><button type="button" data-video title="افزودن ویدیو با پیوند">ویدیو</button><button type="button" data-image title="افزودن تصویر با پیوند">▧</button></div>`;
+        editBody.before(toolbar);
+        const preview = document.createElement('div');
+        preview.className = 'post-live-preview markdown-content';
+        preview.dataset.editorPreview = '';
+        preview.setAttribute('dir', 'auto');
+        editBody.after(preview);
+        bindGroupEditor(editor, renderMarkdown);
+        editor.querySelector<HTMLButtonElement>("[data-cancel-edit]")?.addEventListener("click", () => editor.remove());
+        editor.addEventListener("submit", async (editEvent) => {
+          editEvent.preventDefault();
+          const save = editor.querySelector<HTMLButtonElement>('[type="submit"]')!;
+          const values = new FormData(editor);
+          save.disabled = true;
+          try {
+            await api(`/api/discussions/${post.id}`, "PUT", { title: String(values.get("title")).trim(), body: String(values.get("body")).trim() });
+            await load();
+            notice("تغییرات پست ذخیره شد.");
+          } catch (error) {
+            const target = editor.querySelector<HTMLElement>("[data-edit-notice]");
+            if (target) target.textContent = error instanceof Error ? error.message : "ذخیره ویرایش انجام نشد.";
+            save.disabled = false;
+          }
+        });
+        editor.querySelector<HTMLInputElement>('input[name="title"]')?.focus();
+      });
+      article.querySelector<HTMLButtonElement>("[data-delete-post]")?.addEventListener("click", async (event) => {
+        if (!confirm("این پست و تمام دیدگاه‌های آن حذف شوند؟")) return;
+        try { await api(`/api/discussions/${post.id}`, "DELETE"); await load(); }
+        catch (error) { notice(error instanceof Error ? error.message : "حذف انجام نشد."); }
+      });
+      details.querySelector<HTMLFormElement>("[data-comment-form]")?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        const button = form.querySelector<HTMLButtonElement>("button")!;
+        button.disabled = true;
+        try {
+          await api(`/api/discussions/${post.id}/replies`, "POST", { body: String(new FormData(form).get("body")).trim() });
+          await load();
+          const refreshed = root.querySelector<HTMLDetailsElement>(`[data-post-id="${post.id}"] details`);
+          if (refreshed) { refreshed.open = true; await loadComments(refreshed, post); }
+          notice("دیدگاه شما ثبت شد.");
+        } catch (error) { notice(error instanceof Error ? error.message : "ارسال دیدگاه انجام نشد."); }
+        finally { button.disabled = false; }
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>("[data-member]").forEach((button) => button.addEventListener("click", async () => {
+      button.disabled = true;
+      try { await api(`/api/groups/${group.id}/members/${button.dataset.member}/role`, "PATCH", { role: button.dataset.nextRole }); await load(); }
+      catch (error) { notice(error instanceof Error ? error.message : "تغییر نقش انجام نشد."); }
+      finally { button.disabled = false; }
+    }));
+  }
+
+  (async () => {
+    if (!root || !slug) return;
+    try {
+      const token = localStorage.getItem("gc_token");
+      if (token) {
+        try { user = await api("/api/auth/me"); }
+        catch { localStorage.removeItem("gc_token"); }
+      }
+      await load();
+    } catch (error) {
+      root.innerHTML = `<p class="error">${escapeHtml(error instanceof Error ? error.message : "دریافت گروه ممکن نشد.")}</p>`;
+    }
+  })();
+</script>

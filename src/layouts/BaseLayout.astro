@@ -1,0 +1,192 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+  active?: string;
+}
+const {
+  title = "گیم‌کلاب",
+  description = "جامعه گیمینگ فارسی — تحریریه، گروه‌ها و گفتگو",
+  active = "خانه",
+} = Astro.props;
+
+const nav = [
+  { href: "/", label: "خانه" },
+  { href: "/editorial", label: "تحریریه" },
+  { href: "/groups", label: "گروه‌ها" },
+  { href: "/about", label: "درباره ما" },
+];
+---
+<!doctype html>
+<html lang="fa" dir="rtl" data-theme="aero">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>{title} · گیم‌کلاب</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script is:inline src="/backend-config.js"></script>
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem("gc_theme") || "aero";
+          var d = localStorage.getItem("gc_dark") === "1";
+          document.documentElement.setAttribute("data-theme", t === "y2k" ? "y2k" : "aero");
+          if (d) document.documentElement.classList.add("theme-dark");
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">رفتن به محتوا</a>
+    <div class="app-shell">
+      <div class="sky-orb orb-one" aria-hidden="true"></div>
+      <div class="sky-orb orb-two" aria-hidden="true"></div>
+
+      <header class="topbar">
+        <div class="page-width nav-wrap">
+          <a class="brand" href="/" aria-label="گیم‌کلاب، خانه">
+            <span class="brand-mark" aria-hidden="true">✳</span>
+            <span class="brand-type">گیم<span>‌کلاب</span></span>
+          </a>
+          <nav class="desktop-nav" aria-label="منوی اصلی">
+            {nav.map((item) => (
+              <a href={item.href} class={active === item.label ? "active" : undefined} aria-current={active === item.label ? "page" : undefined}>{item.label}</a>
+            ))}
+          </nav>
+          <div class="nav-actions">
+            <details class="account-dropdown" data-account-link hidden>
+              <summary class="login-btn">حساب کاربری</summary>
+              <nav aria-label="منوی حساب کاربری">
+                <a href="/community#profile">ویرایش پروفایل</a>
+                <a href="/community#friends">دوستان</a>
+                <a href="/community#people-panel">درخواست‌های دوستی</a>
+                <a href="/community#messages">پیام‌های خصوصی</a>
+                <a href="/admin" data-account-admin hidden>مدیریت سایت</a>
+                <button type="button" data-sign-out>خروج از حساب</button>
+              </nav>
+            </details>
+            <div class="theme-switcher" role="group" aria-label="انتخاب تم">
+              <button type="button" data-theme-btn="aero" title="Aero + Liquid Glass">Aero</button>
+              <button type="button" data-theme-btn="y2k" title="Neon + Liquid Glass">Neon</button>
+              <button type="button" data-dark-btn title="روشن / تیره" aria-label="تغییر حالت روشن و تیره">◐</button>
+            </div>
+            <a class="login-btn" href="/login" data-login-link>ورود</a>
+          </div>
+        </div>
+      </header>
+
+      <div class="club-status page-width"><span>جایی برای بازی، کشف و رفاقت</span><span dir="ltr">A GOOD PLACE TO PLAY, MAKE FRIENDS & EXPLORE <b>✳</b></span></div>
+
+      <nav class="mobile-nav" aria-label="منوی اصلی موبایل">
+        {nav.map((item) => (
+          <a href={item.href} aria-current={active === item.label ? "page" : undefined}>{item.label}</a>
+        ))}
+        <a href="/community">حساب</a>
+      </nav>
+
+      <main id="main-content" tabindex="-1">
+        <slot />
+      </main>
+
+      <footer class="footer">
+        <div class="page-width">
+          <div class="brand" style="justify-content:center;margin-bottom:8px">
+            <span class="brand-mark" aria-hidden="true">✳</span>
+            <span class="brand-type">گیم<span>‌کلاب</span></span>
+          </div>
+          <p>جایی برای بازی، کشف و رفاقت.</p>
+          <div class="footer-links">
+            <a href="/about">درباره</a>
+            <a href="/privacy">حریم خصوصی</a>
+            <a href="/account">راهنمای حساب</a>
+            <a href="/community-guidelines">راهنمای جامعه</a>
+            <a href="/editorial">تحریریه</a>
+            <a href="/groups">گروه‌ها</a>
+            <a href="/community" data-footer-account hidden>حساب کاربری</a>
+            <a href="/login" data-footer-login>ورود</a>
+            <a href="/rss.xml">RSS</a>
+          </div>
+          <p style="font-family:ui-monospace,monospace;font-size:11px" dir="ltr">GAMECLUB · MADE FOR PLAYERS · ©</p>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
+
+<style is:global>
+  @import "../styles/global.css";
+  @import "../styles/clubhouse.css";
+</style>
+
+<script>
+  function syncButtons() {
+    const theme = document.documentElement.getAttribute("data-theme") || "aero";
+    const dark = document.documentElement.classList.contains("theme-dark");
+    document.querySelectorAll("[data-theme-btn]").forEach((btn) => {
+      const b = btn as HTMLButtonElement;
+      b.classList.toggle("active", b.dataset.themeBtn === theme);
+      b.setAttribute("aria-pressed", String(b.dataset.themeBtn === theme));
+    });
+    const darkBtn = document.querySelector("[data-dark-btn]") as HTMLButtonElement | null;
+    if (darkBtn) {
+      darkBtn.classList.toggle("active", dark);
+      darkBtn.setAttribute("aria-pressed", String(dark));
+    }
+  }
+
+  function setTheme(t: string) {
+    const next = t === "y2k" ? "y2k" : "aero";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("gc_theme", next); } catch (e) {}
+    syncButtons();
+  }
+
+  function toggleDark() {
+    document.documentElement.classList.toggle("theme-dark");
+    const on = document.documentElement.classList.contains("theme-dark");
+    try { localStorage.setItem("gc_dark", on ? "1" : "0"); } catch (e) {}
+    syncButtons();
+  }
+
+  document.querySelectorAll("[data-theme-btn]").forEach((btn) => {
+    btn.addEventListener("click", () => setTheme((btn as HTMLButtonElement).dataset.themeBtn || "aero"));
+  });
+  document.querySelector("[data-dark-btn]")?.addEventListener("click", toggleDark);
+  syncButtons();
+
+  async function syncAccountMenu() {
+    let signedIn = false;
+    let isAdmin = false;
+    try {
+      const token = localStorage.getItem(window.GAMECLUB_BACKEND?.tokenKey || "gc_token");
+      if (token) {
+        const response = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+        if (response.ok) { const user = await response.json(); signedIn = true; isAdmin = Boolean(user.is_admin); }
+        else localStorage.removeItem(window.GAMECLUB_BACKEND?.tokenKey || "gc_token");
+      }
+    } catch (e) { /* keep the sign-in link visible when the API is unavailable */ }
+    document.querySelectorAll<HTMLElement>("[data-account-link], [data-footer-account]").forEach(node => node.hidden = !signedIn);
+    document.querySelectorAll<HTMLElement>("[data-login-link], [data-footer-login]").forEach(node => node.hidden = signedIn);
+    document.querySelectorAll<HTMLElement>("[data-account-admin]").forEach(node => node.hidden = !isAdmin);
+    if (isAdmin && !document.querySelector("[data-admin-link]")) {
+      const link = document.createElement("a"); link.href = "/admin"; link.textContent = "مدیریت"; link.dataset.adminLink = ""; link.className = "login-btn";
+      document.querySelector(".nav-actions")?.prepend(link);
+    }
+  }
+  void syncAccountMenu();
+  document.querySelector('[data-sign-out]')?.addEventListener('click', () => {
+    localStorage.removeItem(window.GAMECLUB_BACKEND?.tokenKey || 'gc_token');
+    location.href = '/login';
+  });
+  document.addEventListener('click', event => {
+    const menu = document.querySelector<HTMLDetailsElement>('.account-dropdown');
+    if (menu && !menu.contains(event.target as Node)) menu.open = false;
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      const menu = document.querySelector<HTMLDetailsElement>('.account-dropdown');
+      if (menu?.open) { menu.open = false; menu.querySelector<HTMLElement>('summary')?.focus(); }
+    }
+  });
+</script>

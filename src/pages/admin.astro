@@ -1,0 +1,319 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout title="مدیریت" active="">
+  <section class="page-width admin-workspace" id="admin-root">
+    <p class="loading">در حال بررسی دسترسی...</p>
+  </section>
+  <dialog class="content-dialog" id="editor-dialog">
+    <form id="editor-form">
+      <div class="dialog-heading">
+        <div><span class="section-kicker">ویرایشگر Markdown</span><h2 id="editor-title"></h2></div>
+        <button type="button" id="close-editor" aria-label="بستن">×</button>
+      </div>
+      <div id="editor-fields"></div>
+      <p id="editor-notice" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" id="cancel-editor">انصراف</button>
+        <button type="button" id="download-md">دریافت فایل .md</button>
+        <button type="submit" class="btn btn-primary" id="save-editor">ذخیره محتوا</button>
+      </div>
+    </form>
+  </dialog>
+</BaseLayout>
+
+<script>
+  import { micromark } from 'micromark';
+
+  const root = document.getElementById('admin-root')!;
+  const dialog = document.getElementById('editor-dialog') as HTMLDialogElement;
+  const form = document.getElementById('editor-form') as HTMLFormElement;
+  const fields = document.getElementById('editor-fields')!;
+  const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+  type Tab = 'articles' | 'posts' | 'groups';
+  let tab: Tab = 'articles';
+  let articles: any[] = [];
+  let posts: any[] = [];
+  let groups: any[] = [];
+  let current: any = null;
+  let query = '';
+
+  async function api(path: string, method = 'GET', body?: unknown) {
+    const token = localStorage.getItem('gc_token');
+    const response = await fetch(path, {
+      method,
+      headers: { ...(body ? {'Content-Type':'application/json'} : {}), ...(token ? {Authorization:`Bearer ${token}`} : {}) },
+      ...(body ? {body:JSON.stringify(body)} : {}),
+    });
+    const data = response.status === 204 ? null : await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.detail || 'درخواست انجام نشد.');
+    return data;
+  }
+
+  function notice(message: string) {
+    const node = document.getElementById('admin-notice');
+    if (node) node.textContent = message;
+  }
+
+  async function load() {
+    const first = await api('/api/articles?page=1&page_size=50');
+    articles = [...first.items];
+    for (let page = 2; articles.length < first.total; page++) {
+      const next = await api(`/api/articles?page=${page}&page_size=50`);
+      if (!next.items.length) break;
+      articles.push(...next.items);
+    }
+    [groups, posts] = await Promise.all([api('/api/groups'), api('/api/discussions')]);
+    rows();
+  }
+
+  function rows() {
+    const source = tab === 'articles' ? articles : tab === 'posts' ? posts : groups;
+    const list = source.filter(item => String(item.title || item.name).toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+    const container = document.getElementById('admin-list')!;
+    container.innerHTML = list.length ? list.map(item => {
+      const title = item.title || item.name;
+      const subtitle = tab === 'articles'
+        ? `${item.category || 'مطلب'} · ${item.views} بازدید`
+        : tab === 'posts'
+          ? `${item.group || 'گفتگوی عمومی'} · ${item.reply_count} دیدگاه · ${item.user}`
+          : `${item.member_count} عضو · ${item.topic_count} پست`;
+      const href = tab === 'articles' ? `/article/${encodeURIComponent(item.slug)}`
+        : tab === 'posts' ? (groups.find(group => group.id === item.group_id) ? `/groups/${encodeURIComponent(groups.find(group => group.id === item.group_id).slug)}#post-${item.id}` : '/groups')
+        : `/groups/${encodeURIComponent(item.slug)}`;
+      return `<article class="glass-card admin-item"><div class="admin-item-copy"><strong>${escapeHtml(title)}</strong><p class="muted">${escapeHtml(subtitle)}</p></div><div class="admin-row-actions"><a href="${href}">مشاهده</a><button type="button" data-edit="${item.id}">ویرایش</button><button type="button" data-delete="${item.id}" class="text-danger">حذف</button></div></article>`;
+    }).join('') : '<p class="empty">موردی پیدا نشد.</p>';
+    container.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach(button => button.addEventListener('click', () => { const item = list.find(value => value.id === Number(button.dataset.edit)); if (tab === 'articles' && item) location.href = `/write?id=${item.id}`; else edit(item); }));
+    container.querySelectorAll<HTMLButtonElement>('[data-delete]').forEach(button => button.addEventListener('click', async () => {
+      const item = list.find(value => value.id === Number(button.dataset.delete));
+      const label = tab === 'groups' ? `گروه «${item.name}»` : `«${item.title}»`;
+      if (!confirm(`${label} حذف شود؟`)) return;
+      button.disabled = true;
+      try {
+        const path = tab === 'posts' ? `/api/discussions/${item.id}` : `/api/admin/${tab}/${item.id}`;
+        await api(path, 'DELETE');
+        await load();
+        notice('حذف انجام شد.');
+      } catch (error) { notice(error instanceof Error ? error.message : 'حذف انجام نشد.'); }
+      finally { button.disabled = false; }
+    }));
+  }
+
+  function attachMarkdownEditor(initial: string) {
+    const editor = document.getElementById('edit-body') as HTMLTextAreaElement;
+    const preview = document.getElementById('markdown-preview')!;
+    const refresh = () => {
+      preview.innerHTML = editor.value.trim()
+        ? micromark(editor.value, {allowDangerousHtml: false})
+        : '<p class="muted">پیش‌نمایش Markdown اینجا نمایش داده می‌شود.</p>';
+    };
+    editor.value = initial;
+    editor.addEventListener('input', refresh);
+    fields.querySelectorAll<HTMLButtonElement>('[data-wrap]').forEach(button => button.addEventListener('click', () => {
+      const marker = button.dataset.wrap!;
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const selected = editor.value.slice(start, end) || 'متن شما';
+      editor.setRangeText(`${marker}${selected}${button.dataset.after || marker}`, start, end, 'select');
+      editor.focus();
+      refresh();
+    }));
+    fields.querySelectorAll<HTMLButtonElement>('[data-line]').forEach(button => button.addEventListener('click', () => {
+      const start = editor.selectionStart;
+      const lineStart = editor.value.lastIndexOf('\n', Math.max(0, start - 1)) + 1;
+      editor.setRangeText(button.dataset.line!, lineStart, lineStart, 'end');
+      editor.focus();
+      refresh();
+    }));
+    fields.querySelector<HTMLButtonElement>('[data-code]')?.addEventListener('click', () => {
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const selected = editor.value.slice(start, end) || 'کد خود را اینجا بنویسید';
+      editor.setRangeText(`\n\`\`\`text\n${selected}\n\`\`\`\n`, start, end, 'select');
+      editor.focus();
+      refresh();
+    });
+    fields.querySelector<HTMLButtonElement>('[data-table]')?.addEventListener('click', () => {
+      const start = editor.selectionStart;
+      editor.setRangeText('| ستون ۱ | ستون ۲ |\n| --- | --- |\n| مقدار | مقدار |', start, start, 'end');
+      editor.focus(); refresh();
+    });
+    fields.querySelector<HTMLButtonElement>('[data-image]')?.addEventListener('click', () => {
+      const start = editor.selectionStart, end = editor.selectionEnd;
+      const alt = editor.value.slice(start, end) || 'متن جایگزین';
+      editor.setRangeText(`![${alt}](https://)`, start, end, 'select');
+      editor.focus(); refresh();
+    });
+    fields.querySelector<HTMLInputElement>('[data-md-file]')?.addEventListener('change', async event => {
+      const input = event.currentTarget as HTMLInputElement;
+      const file = input.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      const frontmatter = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
+      let content = text;
+      if (frontmatter) {
+        const scalar = (value: string | undefined) => {
+          if (!value) return '';
+          try { return JSON.parse(value); } catch { return value.replace(/^['"]|['"]$/g, ''); }
+        };
+        const title = scalar(frontmatter[1].match(/^title:\s*(.*)$/m)?.[1]);
+        const slug = scalar(frontmatter[1].match(/^slug:\s*(.*)$/m)?.[1]);
+        const titleInput = document.getElementById('edit-title') as HTMLInputElement | null;
+        if (title && titleInput) titleInput.value = title;
+        const slugInput = document.getElementById('edit-slug') as HTMLInputElement | null;
+        if (slug && slugInput) slugInput.value = slug;
+        content = text.slice(frontmatter[0].length);
+      }
+      editor.value = content;
+      refresh();
+      input.value = '';
+    });
+    refresh();
+  }
+
+  function edit(item: any = null) {
+    current = item || null;
+    const isArticle = tab === 'articles';
+    const isPost = tab === 'posts';
+    const isGroup = tab === 'groups';
+    const kind = isArticle ? 'مطلب' : isPost ? 'پست' : 'گروه';
+    document.getElementById('editor-title')!.textContent = `${item ? 'ویرایش' : 'ایجاد'} ${kind}`;
+    document.getElementById('editor-notice')!.textContent = '';
+    document.getElementById('download-md')!.toggleAttribute('hidden', isGroup);
+    if (isArticle || isPost) {
+      const groupSelect = isPost && !item ? `<label for="edit-group">انتشار در گروه</label><select id="edit-group" name="group_id" required><option value="">انتخاب گروه...</option>${groups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}</option>`).join('')}</select>${groups.length ? '' : '<p class="muted">برای نوشتن پست ابتدا یک گروه بسازید.</p>'}` : '';
+      const excerpt = isArticle ? `<label for="edit-excerpt">خلاصه</label><textarea id="edit-excerpt" name="excerpt" rows="2">${escapeHtml(item?.excerpt)}</textarea>` : '';
+      const image = isArticle ? `<div class="editor-field-grid"><div><label for="edit-image">نشانی تصویر</label><input id="edit-image" name="image" value="${escapeHtml(item?.image)}" /></div><div><label for="edit-upload">بارگذاری تصویر</label><input id="edit-upload" name="upload" type="file" accept="image/*" /></div></div>` : '';
+      const maxLength = isPost ? 10000 : 50000;
+      fields.innerHTML = `
+        ${groupSelect}
+        ${item && isPost ? `<p class="editor-context">گروه: <strong>${escapeHtml(item.group || 'گفتگوی عمومی')}</strong></p>` : ''}
+        <div class="editor-field-grid"><div><label for="edit-title">عنوان</label><input id="edit-title" name="title" maxlength="300" required value="${escapeHtml(item?.title)}" /></div>${isArticle ? `<div><label for="edit-slug">نشانی (slug)</label><input id="edit-slug" name="slug" value="${escapeHtml(item?.slug)}" /></div>` : ''}</div>
+        ${excerpt}
+        <div class="md-label-row"><label for="edit-body">متن Markdown</label><span>ذخیره به شکل متن Markdown خام</span></div>
+        <div class="md-toolbar" role="toolbar" aria-label="ابزارهای Markdown">
+          <button type="button" data-line="# " title="عنوان اصلی">تیتر ۱</button><button type="button" data-line="## " title="عنوان بخش">تیتر ۲</button>
+          <button type="button" data-wrap="**" data-after="**" title="متن ضخیم"><strong>B</strong></button><button type="button" data-wrap="*" data-after="*" title="متن مورب"><em>I</em></button><button type="button" data-wrap="~~" data-after="~~" title="متن خط‌خورده">S</button>
+          <button type="button" data-line="> " title="نقل‌قول">❝</button><button type="button" data-line="- " title="فهرست نشانه‌دار">☷</button><button type="button" data-line="1. " title="فهرست شماره‌دار">۱.</button><button type="button" data-wrap="[" data-after="](https://)" title="افزودن پیوند">🔗</button><button type="button" data-wrap="&#96;" data-after="&#96;" title="کد درون‌خطی">&lt;/&gt;</button><button type="button" data-line="---\n" title="خط جداکننده">—</button><button type="button" data-table title="افزودن جدول">▦</button><button type="button" data-image title="افزودن تصویر">▧</button><button type="button" data-code title="بلوک کد">کد</button>
+          <label class="md-import">بازکردن فایل Markdown<input type="file" data-md-file accept=".md,.markdown,text/markdown" /></label>
+        </div>
+        <div class="md-workspace"><div class="md-source"><div class="pane-title">ویرایش</div><textarea id="edit-body" name="body" rows="18" maxlength="${maxLength}" dir="auto" required></textarea></div><div class="md-preview-wrap"><div class="pane-title">پیش‌نمایش زنده</div><div class="markdown-content md-preview" id="markdown-preview" dir="auto"></div></div></div>
+        ${image}`;
+      attachMarkdownEditor(item?.body || '');
+    } else {
+      fields.innerHTML = `
+        <label for="edit-name">نام گروه</label><input id="edit-name" name="name" maxlength="120" required value="${escapeHtml(item?.name)}" />
+        <label for="edit-description">معرفی گروه</label><textarea id="edit-description" name="description" rows="4">${escapeHtml(item?.description)}</textarea>
+        <label><input type="checkbox" name="is_private" ${item?.is_private ? 'checked' : ''} /> گروه خصوصی باشد (از فهرست عمومی پنهان می‌ماند)</label>
+        ${item ? '<button class="btn btn-ghost" id="rotate-group-key" type="button">ساخت کلید دسترسی گروه</button><p id="group-key-result" dir="ltr"></p>' : ''}
+        <label for="edit-icon">نماد گروه</label><input id="edit-icon" name="icon" maxlength="8" value="${escapeHtml(item?.icon || '')}" />
+        <label for="edit-color">رنگ گروه</label><input id="edit-color" name="color" type="color" value="${/^#[0-9a-f]{6}$/i.test(item?.color || '') ? item.color : '#7c3aed'}" />`;
+    }
+    dialog.showModal();
+    if (isPost && !item && groups.length === 0) {
+      (document.getElementById('save-editor') as HTMLButtonElement).disabled = true;
+    } else {
+      (document.getElementById('save-editor') as HTMLButtonElement).disabled = false;
+    }
+  }
+
+  document.getElementById('close-editor')!.addEventListener('click', () => dialog.close());
+  document.getElementById('cancel-editor')!.addEventListener('click', () => dialog.close());
+  document.getElementById('download-md')!.addEventListener('click', () => {
+    const title = (document.getElementById('edit-title') as HTMLInputElement | null)?.value || current?.title || 'content';
+    const body = (document.getElementById('edit-body') as HTMLTextAreaElement | null)?.value || '';
+    const isArticle = tab === 'articles';
+    const isPost = tab === 'posts';
+    const slug = (document.getElementById('edit-slug') as HTMLInputElement | null)?.value || current?.slug || '';
+    const source = `---\ntitle: ${JSON.stringify(title)}\nslug: ${JSON.stringify(slug)}\ntype: ${isArticle ? 'article' : isPost ? 'post' : 'content'}\n---\n\n${body}`;
+    const url = URL.createObjectURL(new Blob([source], {type:'text/markdown;charset=utf-8'}));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${slug.replace(/[\\/:*?"<>|]/g, '-') || 'gameclub-content'}.md`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = document.getElementById('save-editor') as HTMLButtonElement;
+    const data = new FormData(form);
+    const isArticle = tab === 'articles';
+    const isPost = tab === 'posts';
+    const body: Record<string, unknown> = isArticle
+      ? {title:String(data.get('title')).trim(), slug:String(data.get('slug')).trim() || undefined, excerpt:String(data.get('excerpt')).trim(), body:String(data.get('body')), image:String(data.get('image')).trim()}
+      : isPost
+        ? {title:String(data.get('title')).trim(), body:String(data.get('body'))}
+        : {name:String(data.get('name')).trim(), description:String(data.get('description')).trim(), icon:String(data.get('icon')).trim(), color:data.get('color'), is_private:data.has('is_private')};
+    button.disabled = true;
+    try {
+      const file = data.get('upload');
+      if (file instanceof File && file.size) {
+        const token = localStorage.getItem('gc_token');
+        const uploaded = await apiUpload(file, token);
+        body.image = uploaded.url;
+      }
+      let path: string;
+      let method = current ? 'PUT' : 'POST';
+      if (isPost) {
+        path = current ? `/api/admin/discussions/${current.id}` : `/api/groups/${Number(data.get('group_id'))}/posts`;
+      } else if (isArticle) {
+        path = current ? `/api/admin/articles/${current.id}` : '/api/admin/articles';
+      } else {
+        path = current ? `/api/admin/groups/${current.id}` : '/api/groups';
+      }
+      await api(path, method, body);
+      dialog.close();
+      await load();
+      notice('تغییرات ذخیره شدند.');
+    } catch (error) { document.getElementById('editor-notice')!.textContent = error instanceof Error ? error.message : 'ذخیره انجام نشد.'; }
+    finally { button.disabled = false; }
+  });
+
+  fields.addEventListener('click', async event => {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>('#rotate-group-key');
+    if (!button || !current) return;
+    button.disabled = true;
+    try {
+      const result = await api(`/api/groups/${current.id}/access-key`, 'POST', {});
+      document.getElementById('group-key-result')!.textContent = `این کلید را فقط یک‌بار کپی و به افراد مجاز بدهید: ${result.access_key}`;
+    } catch (error) { document.getElementById('editor-notice')!.textContent = error instanceof Error ? error.message : 'ساخت کلید ناموفق بود.'; }
+    finally { button.disabled = false; }
+  });
+
+  async function apiUpload(file: File, token: string | null) {
+    const data = new FormData(); data.append('file', file);
+    const response = await fetch('/api/admin/media/upload', {method:'POST',headers:token ? {Authorization:`Bearer ${token}`} : {},body:data});
+    const result = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(result?.detail || 'بارگذاری تصویر انجام نشد.');
+    return result;
+  }
+
+  (async () => {
+    try {
+      const token = localStorage.getItem('gc_token');
+      if (!token) throw new Error('برای مدیریت وارد حساب مدیر شوید.');
+      const user = await api('/api/auth/me');
+      if (!user?.is_admin) throw new Error('این بخش فقط برای مدیران گیم‌کلاب است.');
+      root.innerHTML = `<div class="section-heading admin-title"><div><span class="section-kicker">مدیریت محتوا</span><h1>مدیریت گیم‌کلاب</h1><p>مطلب و پست‌ها را با Markdown بنویسید و پیش‌نمایش را هم‌زمان ببینید.</p></div><a class="btn btn-ghost studio-write-link" href="/write" hidden>استودیوی نوشتن</a><button class="btn btn-primary" id="new-content" type="button">مطلب جدید</button></div><div class="admin-toolbar"><div class="admin-tabs"><button data-tab="articles" type="button" aria-pressed="true">مطالب</button><button data-tab="posts" type="button" aria-pressed="false">پست‌ها</button><button data-tab="groups" type="button" aria-pressed="false">گروه‌ها</button></div><input id="admin-search" type="search" placeholder="جستجو..."/><button id="admin-refresh" class="btn-ghost" type="button">تازه‌سازی</button></div><p id="admin-notice" role="status" aria-live="polite"></p><div id="admin-list"></div>`;
+      document.getElementById('new-content')!.addEventListener('click', () => { if (tab === 'articles') location.href = '/write'; else edit(); });
+      document.getElementById('admin-search')!.addEventListener('input', event => {query = (event.target as HTMLInputElement).value.trim(); rows();});
+      root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(button => button.addEventListener('click', () => {
+        tab = button.dataset.tab as Tab;
+        root.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach(other => other.setAttribute('aria-pressed', String(other === button)));
+        document.getElementById('new-content')!.textContent = tab === 'articles' ? 'مطلب جدید' : tab === 'posts' ? 'پست جدید' : 'گروه جدید';
+        document.querySelector<HTMLAnchorElement>('.studio-write-link')?.toggleAttribute('hidden', tab !== 'articles');
+        rows();
+      }));
+      document.getElementById('admin-refresh')!.addEventListener('click', () => load().catch(error => notice(String(error))));
+      await load();
+    } catch (error) {
+      root.innerHTML = `<div class="glass-card"><h1>مدیریت گیم‌کلاب</h1><p>${escapeHtml(error instanceof Error ? error.message : 'دسترسی ممکن نیست.')}</p><a class="btn btn-primary" href="/login?next=%2Fadmin">ورود</a></div>`;
+    }
+  })();
+</script>
+
+<style is:global>
+  .admin-workspace{padding:32px 0 64px}.admin-title h1{margin:0;font-size:clamp(28px,4vw,38px)}.admin-title p{color:var(--muted);margin:6px 0 0}.admin-toolbar,.admin-tabs,.admin-row-actions,.dialog-actions,.dialog-heading{display:flex;align-items:center;gap:10px}.admin-toolbar{margin-bottom:16px;flex-wrap:wrap}.admin-tabs{margin-inline-end:auto;flex-wrap:wrap}.admin-tabs button,.admin-row-actions button,.admin-row-actions a,.dialog-heading button,.dialog-actions button{font:inherit;color:var(--ink);background:var(--glass);border:1px solid var(--glass-border);border-radius:10px;padding:8px 12px;min-height:44px;text-decoration:none;cursor:pointer}.admin-tabs button[aria-pressed="true"]{background:var(--accent);color:white}.admin-toolbar input{min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--glass-border);font:inherit}.admin-item{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}.admin-item-copy{min-width:0}.admin-item p{margin:5px 0 0;color:var(--muted)}.admin-row-actions{flex-wrap:wrap}.content-dialog{width:min(1180px,calc(100% - 24px));max-height:94vh;overflow:auto;background:var(--sky-mid);color:var(--ink);border:1px solid var(--glass-border);border-radius:18px;padding:clamp(16px,3vw,28px)}.content-dialog::backdrop{background:#101522aa;backdrop-filter:blur(5px)}.dialog-heading{justify-content:space-between;margin-bottom:18px}.dialog-heading h2{margin:4px 0 0}.content-dialog label{display:block;margin:12px 0 5px;font-weight:700}.content-dialog input,.content-dialog textarea,.content-dialog select{box-sizing:border-box;width:100%;padding:11px;border-radius:9px;border:1px solid var(--glass-border);background:var(--glass);font:inherit;color:var(--ink)}.dialog-actions{justify-content:flex-start;margin-top:16px;flex-wrap:wrap}.dialog-actions [hidden]{display:none}.editor-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.editor-context{color:var(--muted)}.md-label-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.md-label-row span,.pane-title{color:var(--muted);font-size:12px}.md-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px;border:1px solid var(--glass-border);border-bottom:0;border-radius:12px 12px 0 0;background:var(--glass)}.md-toolbar button,.md-import{display:inline-grid;min-width:38px;min-height:36px;place-items:center;padding:4px 9px;border:1px solid var(--glass-border);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer}.md-import{display:flex;align-items:center;margin-inline-start:auto;font-size:12px}.md-import input{display:none}.md-workspace{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--glass-border);border-radius:0 0 12px 12px;overflow:hidden}.md-source,.md-preview-wrap{min-width:0;padding:12px}.md-source{border-inline-end:1px solid var(--glass-border)}.pane-title{margin-bottom:8px;font-weight:800}.md-source textarea{min-height:360px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;line-height:1.8;unicode-bidi:plaintext}.md-preview{min-height:360px;padding:8px;overflow-wrap:anywhere}.markdown-content{line-height:1.95}.markdown-content h1,.markdown-content h2,.markdown-content h3{line-height:1.5;margin:1.3em 0 .5em}.markdown-content p{margin:.7em 0}.markdown-content blockquote{margin:1em 0;padding:.2em 1em;border-inline-start:3px solid var(--accent);color:var(--muted);background:var(--glass)}.markdown-content pre{direction:ltr;text-align:left;overflow:auto;padding:14px;border-radius:10px;background:#101522;color:#e8f4ff}.markdown-content code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.markdown-content :not(pre)>code{padding:2px 6px;border-radius:5px;background:var(--glass)}.markdown-content img{max-width:100%;border-radius:12px}.markdown-content table{display:block;max-width:100%;overflow:auto;border-collapse:collapse}.markdown-content th,.markdown-content td{border:1px solid var(--glass-border);padding:7px 10px}.markdown-content a{color:var(--accent);text-decoration:underline}.markdown-content li{margin:.25em 0}
+  @media(max-width:700px){.admin-item{align-items:flex-start;flex-direction:column}.admin-row-actions{width:100%}.editor-field-grid,.md-workspace{grid-template-columns:1fr}.md-source{border-inline-end:0;border-bottom:1px solid var(--glass-border)}.md-source textarea,.md-preview{min-height:220px}.md-label-row{align-items:flex-start;flex-direction:column}.admin-tabs{width:100%;margin:0}.admin-toolbar input{flex:1}}
+</style>

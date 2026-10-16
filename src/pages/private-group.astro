@@ -1,0 +1,14 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="ورود به گروه خصوصی" active="گروه‌ها">
+  <section class="page-width page-hero"><h1>ورود به گروه خصوصی</h1><p>نام نشانی گروه و کلیدی را که مدیر گروه به شما داده وارد کنید.</p>
+    <form id="private-group-form" class="glass-card" style="padding:20px;max-width:600px"><label>نشانی گروه<input name="slug" required placeholder="group-slug" dir="ltr"></label><label>کلید گروه<input name="key" type="password" required dir="ltr"></label><button class="btn btn-primary">ورود</button></form>
+    <p id="private-group-notice" role="status"></p><div id="private-group-content"></div>
+  </section>
+</BaseLayout>
+<script>
+const form=document.getElementById('private-group-form') as HTMLFormElement;
+const esc=(s:unknown)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+form.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(form),slug=String(f.get('slug')).trim(),key=String(f.get('key')).trim();const notice=document.getElementById('private-group-notice')!,content=document.getElementById('private-group-content')!;notice.textContent='';content.innerHTML='';try{const headers={'X-Group-Key':key};const req=async(path:string)=>{const r=await fetch(path,{headers});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||'دسترسی ممکن نیست');return d};const g=await req(`/api/groups/${encodeURIComponent(slug)}`);const posts=await req(`/api/groups/${g.id}/posts`);content.innerHTML=`<section class="glass-card" style="padding:20px"><h2>${esc(g.name)}</h2><p>${esc(g.description)}</p>${posts.map((p:any)=>`<article><h3>${esc(p.title)}</h3><p>${esc(p.user)} · ${esc(p.age)}</p><pre style="white-space:pre-wrap">${esc(p.body)}</pre></article>`).join('')}</section>`;}catch(err){notice(err instanceof Error?err.message:'ورود ناموفق بود.');}});
+</script>

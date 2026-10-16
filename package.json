@@ -1,0 +1,21 @@
+{
+  "name": "gameclub-frontend",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev --host 0.0.0.0",
+    "build": "astro build",
+    "start": "node dist/server/entry.mjs",
+    "preview": "astro preview --host 0.0.0.0 --port 4321"
+  },
+  "description": "GameClub Astro frontend with an editable backend integration adapter",
+  "dependencies": {
+    "@astrojs/node": "^11.1.7",
+    "astro": "^7.3.8",
+    "micromark": "^4.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

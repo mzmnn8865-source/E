@@ -1,0 +1,86 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="ورود" active="">
+  <div class="glass-card login-card page-width">
+    <h1 id="auth-heading" style="margin-top:0;font-weight:900">ورود</h1>
+    <p id="auth-description" style="color:var(--muted);font-size:14px">به جمع بازیکن‌ها برگردید و گفتگو را ادامه دهید.</p>
+    <div class="auth-tabs" role="tablist" aria-label="حساب کاربری"><button type="button" id="login-tab" role="tab" aria-selected="true">ورود</button><button type="button" id="signup-tab" role="tab" aria-selected="false">ساخت حساب</button></div>
+    <form id="login-form">
+      <div id="display-name-field" hidden><label for="display-name">نام نمایشی</label><input id="display-name" name="display_name" autocomplete="name" minlength="1" maxlength="128" /></div>
+      <label for="username">نام کاربری</label>
+      <input id="username" name="username" required autocomplete="username" minlength="3" maxlength="64" />
+      <div id="email-field" hidden><label for="email">ایمیل</label><input id="email" name="email" type="email" autocomplete="email" /></div>
+      <label for="password">رمز عبور</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password" />
+      <div id="confirm-field" hidden><label for="confirm-password">تکرار رمز عبور</label><input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" /></div>
+      <button class="btn btn-primary" type="submit">ورود</button>
+    </form>
+    <p id="login-msg" style="margin-top:12px;font-weight:700"></p>
+  </div>
+</BaseLayout>
+
+<script>
+  const form = document.getElementById("login-form") as HTMLFormElement;
+  const msg = document.getElementById("login-msg");
+  let signup = false;
+  const displayName = document.getElementById("display-name") as HTMLInputElement;
+  const email = document.getElementById("email") as HTMLInputElement;
+  const confirmPassword = document.getElementById("confirm-password") as HTMLInputElement;
+  const syncMode = () => {
+    signup = !signup;
+    document.getElementById("auth-heading")!.textContent = signup ? "ساخت حساب گیم‌کلاب" : "ورود";
+    document.getElementById("auth-description")!.textContent = signup ? "حساب بسازید و به گفتگوهای گروه‌ها بپیوندید." : "به جمع بازیکن‌ها برگردید و گفتگو را ادامه دهید.";
+    document.getElementById("display-name-field")!.toggleAttribute("hidden", !signup);
+    document.getElementById("email-field")!.toggleAttribute("hidden", !signup);
+    document.getElementById("confirm-field")!.toggleAttribute("hidden", !signup);
+    displayName.required = signup; email.required = signup; confirmPassword.required = signup;
+    (document.getElementById("password") as HTMLInputElement).autocomplete = signup ? "new-password" : "current-password";
+    (document.getElementById("password") as HTMLInputElement).minLength = signup ? 8 : 0;
+    document.getElementById("login-tab")!.setAttribute("aria-selected", String(!signup));
+    document.getElementById("signup-tab")!.setAttribute("aria-selected", String(signup));
+    form.querySelector<HTMLButtonElement>("[type=submit]")!.textContent = signup ? "ساخت حساب" : "ورود";
+    if (msg) msg.textContent = "";
+  };
+  document.getElementById("login-tab")?.addEventListener("click", () => { if (signup) syncMode(); });
+  document.getElementById("signup-tab")?.addEventListener("click", () => { if (!signup) syncMode(); });
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    try {
+      if (signup && fd.get("password") !== fd.get("confirm_password")) throw new Error("رمز عبور و تکرار آن یکسان نیستند.");
+      const values = Object.fromEntries(fd.entries());
+      const adapter = window.GAMECLUB_BACKEND;
+      const res = await fetch(signup ? "/api/auth/register" : "/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signup
+          ? (adapter?.registerPayload?.(values) ?? {
+          username: fd.get("username"),
+          password: fd.get("password"),
+          display_name: fd.get("display_name"),
+          email: fd.get("email"),
+        })
+          : (adapter?.loginPayload?.(values) ?? {
+            username: fd.get("username"),
+            password: fd.get("password"),
+          })),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "ورود ناموفق");
+      const accessToken = adapter?.accessToken?.(data) ?? data.access_token;
+      if (!accessToken) throw new Error("پاسخ ورود، نشانه دسترسی ندارد. تنظیم backend-config.js را بررسی کنید.");
+      localStorage.setItem(adapter?.tokenKey || "gc_token", accessToken);
+      if (msg) msg.textContent = signup ? "حساب شما ساخته شد؛ خوش آمدید!" : "ورود موفق؛ خوش آمدید!";
+      const requested = new URLSearchParams(location.search).get("next") || "/";
+      const next = requested.startsWith("/") && !requested.startsWith("//") ? requested : "/";
+      setTimeout(() => { location.href = next; }, 400);
+    } catch (err) {
+      if (msg) msg.textContent = err instanceof Error ? err.message : "خطا";
+    }
+  });
+</script>
+
+<style>
+  .login-card{max-width:520px;margin:52px auto;padding:28px}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0;padding:5px;background:var(--glass);border:1px solid var(--glass-border);border-radius:14px}.auth-tabs button{min-height:42px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-weight:800;cursor:pointer}.auth-tabs button[aria-selected="true"]{background:var(--accent);color:var(--on-action)}#login-form label{display:block;margin:12px 0 5px;font-weight:700}#login-form input{box-sizing:border-box;width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--glass-border);border-radius:10px;background:var(--sky-mid);color:var(--ink);font:inherit}#login-form [type=submit]{width:100%;margin-top:18px}#login-msg{min-height:1.5em}
+</style>
